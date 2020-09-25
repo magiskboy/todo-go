@@ -4,11 +4,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/dgrijalva/jwt-go"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"os"
-	"time"
 )
 
 var db *gorm.DB = nil
@@ -18,7 +16,7 @@ type User struct {
 	gorm.Model
 	Name   string `json:"name"`
 	Email  string `json:"email" gorm:"unique"`
-	Tasks  []Task `json:"tasks" gorm:"foreignKey:ID"`
+	Tasks  []Task `json:"tasks" gorm:"foreignKey:UserRefer"`
 	PwHash string `gorm:"column:pwhash"`
 }
 
@@ -28,6 +26,7 @@ type Task struct {
 	Name        string `json:"name"`
 	Done        bool   `json:"done"`
 	Description string `json:"description"`
+	UserRefer   uint   `json:"user_id"`
 }
 
 // SetPassword hash raw password and save to db
@@ -44,7 +43,7 @@ func (user *User) VerifyPassword(password string) bool {
 
 // AddTask append a new task into user
 func (user *User) AddTask(name, description string, done bool) (Task, error) {
-	NewTask := Task{Name: name, Description: description, Done: done}
+	NewTask := Task{Name: name, Description: description, Done: done, UserRefer: user.ID}
 	if r := db.Create(&NewTask); r.Error != nil {
 		return Task{}, r.Error
 	}
@@ -60,17 +59,6 @@ func (user *User) RemoveTask(TaskID uint) (Task, error) {
 		}
 	}
 	return Task{}, errors.New("Task not found")
-}
-
-// GenerateCredential generate a token
-func (user *User) GenerateCredential() (string, error) {
-	atClaims := jwt.MapClaims{}
-	atClaims["authenticate"] = true
-	atClaims["email"] = user.Email
-	atClaims["exp"] = time.Now().Add(time.Minute * 15).Unix()
-	at := jwt.NewWithClaims(jwt.SigningMethodHS256, atClaims)
-	token, err := at.SignedString([]byte(os.Getenv("SECRET_KEY")))
-	return token, err
 }
 
 // GetUserByEmail find a user

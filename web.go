@@ -1,16 +1,16 @@
 package main
 
 import (
-	"errors"
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
+	"log"
 	"net/http"
 	"os"
-	"strings"
 )
 
 // App is a HTTP application
 var App *gin.Engine
+
+var identifyKey = "email"
 
 // LoginInfo json login payload
 type LoginInfo struct {
@@ -25,70 +25,15 @@ type UserInfo struct {
 	Password string `json:"password" binding:"required"`
 }
 
-// LoginRequired authenticate request
-func LoginRequired(ctx *gin.Context) (string, error) {
-	AuthValue := ctx.Request.Header.Get("Authorization")
-	if len(AuthValue) > 1 {
-		TokenString := strings.TrimPrefix(AuthValue, "Bearer")
-		token, err := jwt.Parse(TokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, errors.New("Method is invalid")
-			}
-			return []byte(os.Getenv("SECRET_KEY")), nil
-		})
-		if err != nil {
-			return "", err
-		}
-		if _, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			// check token expired
-			// now := time.Now()
-			// if now.After(claims["exp"]) {
-			// return "", errors.New("Token is expired")
-			// }
-			// return claims["email"], nil
-			return "", nil
-		}
-	}
-	return "", errors.New("Token is missing")
+// TaskInfo use to create task
+type TaskInfo struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
 }
 
 // CheckHealth api check healthy
 func CheckHealth(ctx *gin.Context) {
 	ctx.Writer.WriteHeader(http.StatusNoContent)
-}
-
-// LoginUser login handler
-func LoginUser(ctx *gin.Context) {
-	var data LoginInfo
-	if err := ctx.ShouldBindJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-	user, err := GetUserByEmail(data.Email)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"message": "User not found",
-		})
-		return
-	}
-	if user.VerifyPassword(data.Password) {
-		token, err := user.GenerateCredential()
-		if err != nil {
-			ctx.JSON(http.StatusUnauthorized, gin.H{
-				"message": "Can't create credential",
-			})
-		} else {
-			ctx.JSON(http.StatusOK, gin.H{
-				"token": token,
-			})
-		}
-	} else {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"message": "Password is invalid",
-		})
-	}
 }
 
 // CreateUser user login handler
@@ -97,6 +42,7 @@ func CreateUser(ctx *gin.Context) {
 	if err := ctx.ShouldBindJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
+			"code":    400,
 		})
 		return
 	}
@@ -104,23 +50,75 @@ func CreateUser(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
+			"code":    400,
 		})
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{
-		"id": newUser.ID,
+		"id":   newUser.ID,
+		"code": 200,
 	})
 }
 
 // GetTasks get all tasks of a user
 func GetTasks(ctx *gin.Context) {
+	user, _ := ctx.Get(identifyKey)
+	tasks := user.(*User).Tasks
+	if tasks == nil {
+		tasks = make([]Task, 0)
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"code":  200,
+		"tasks": tasks,
+	})
+}
 
+// CreateTask create a new task
+func CreateTask(ctx *gin.Context) {
+	var data TaskInfo
+	if err := ctx.ShouldBindJSON(&data); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+	user, _ := ctx.Get(identifyKey)
+	task, err := user.(*User).AddTask(data.Name, data.Description, false)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"task_id": task.ID,
+	})
 }
 
 // InitHTTP initialize function
 func InitHTTP() {
-	App = gin.Default()
-	App.GET("/", CheckHealth)
-	App.POST("/api/auth", LoginUser)
-	App.POST("/api/users", CreateUser)
+	authMiddleware, err := CreateAuthMiddleware(os.Getenv("SECRET_KEY"), identifyKey)
+	if err != nil {
+		log.Fatalln(err.Error())
+		os.Exit(-1)
+	}
+
+	App = gin.New()
+	App.Use(gin.Logger())
+	App.Use(gin.Recovery())
+	App.GET("/health", CheckHealth)
+	public := App.Group("/public")
+	{
+		public.POST("/login", authMiddleware.LoginHandler)
+		public.POST("/users", CreateUser)
+	}
+	private := App.Group("/private")
+	private.Use(authMiddleware.MiddlewareFunc())
+	{
+		private.GET("/tasks", GetTasks)
+		private.POST("/tasks", CreateTask)
+	}
 }
