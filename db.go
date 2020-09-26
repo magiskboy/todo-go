@@ -11,15 +11,6 @@ import (
 
 var db *gorm.DB = nil
 
-// User user model
-type User struct {
-	gorm.Model
-	Name   string `json:"name"`
-	Email  string `json:"email" gorm:"unique"`
-	Tasks  []Task `json:"tasks" gorm:"foreignKey:UserRefer"`
-	PwHash string `gorm:"column:pwhash"`
-}
-
 // Task task model
 type Task struct {
 	gorm.Model
@@ -27,6 +18,15 @@ type Task struct {
 	Done        bool   `json:"done"`
 	Description string `json:"description"`
 	UserRefer   uint   `json:"user_id"`
+}
+
+// User user model
+type User struct {
+	gorm.Model
+	Name   string `json:"name"`
+	Email  string `json:"email" gorm:"unique"`
+	Tasks  []Task `json:"tasks" gorm:"foreignKey:UserRefer"`
+	PwHash string `gorm:"column:pwhash"`
 }
 
 // SetPassword hash raw password and save to db
@@ -64,7 +64,7 @@ func (user *User) RemoveTask(TaskID uint) (Task, error) {
 // GetUserByEmail find a user
 func GetUserByEmail(email string) (User, error) {
 	var user User
-	result := db.First(&user, "email = ?", email)
+	result := db.Preload("Tasks").First(&user, "email = ?", email)
 	return user, result.Error
 }
 
@@ -77,6 +77,15 @@ func CreateNewUser(email, name, password string) (User, error) {
 	NewUser.SetPassword(password)
 	db.Create(&NewUser)
 	return NewUser, nil
+}
+
+// GetTaskByID get task by id
+func GetTaskByID(TaskID string) (Task, error) {
+	var task Task
+	if r := db.First(&task, TaskID); r.Error != nil {
+		return task, r.Error
+	}
+	return task, nil
 }
 
 // InitDB create database connection and migrate models

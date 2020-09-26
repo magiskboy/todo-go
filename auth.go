@@ -3,9 +3,14 @@ package main
 import (
 	jwt "github.com/appleboy/gin-jwt/v2"
 	"github.com/gin-gonic/gin"
-	"net/http"
 	"time"
 )
+
+// LoginInfo json login payload
+type LoginInfo struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
 
 // CreateAuthMiddleware create auth middleware
 func CreateAuthMiddleware(SecretKey, identifyKey string) (*jwt.GinJWTMiddleware, error) {
@@ -20,14 +25,11 @@ func CreateAuthMiddleware(SecretKey, identifyKey string) (*jwt.GinJWTMiddleware,
 			if v, ok := data.(*User); ok {
 				return jwt.MapClaims{
 					identifyKey: v.Email,
+					"Name":      v.Name,
+					"ID":        v.ID,
 				}
 			}
 			return jwt.MapClaims{}
-		},
-		IdentityHandler: func(ctx *gin.Context) interface{} {
-			claims := jwt.ExtractClaims(ctx)
-			user, _ := GetUserByEmail(claims[identifyKey].(string))
-			return &user
 		},
 		Authenticator: func(ctx *gin.Context) (interface{}, error) {
 			var data LoginInfo
@@ -39,15 +41,6 @@ func CreateAuthMiddleware(SecretKey, identifyKey string) (*jwt.GinJWTMiddleware,
 				return "", jwt.ErrFailedAuthentication
 			}
 			return &user, nil
-		},
-		Authorizator: func(data interface{}, ctx *gin.Context) bool {
-			return true
-		},
-		Unauthorized: func(ctx *gin.Context, code int, message string) {
-			ctx.JSON(http.StatusUnauthorized, gin.H{
-				"code":    code,
-				"message": message,
-			})
 		},
 		TokenLookup:   "header:Authorization",
 		TokenHeadName: "Bearer",

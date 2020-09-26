@@ -5,48 +5,36 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 )
 
-// App is a HTTP application
+// App HTTP application
 var App *gin.Engine
-
 var identifyKey = "email"
-
-// LoginInfo json login payload
-type LoginInfo struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
-// UserInfo json data for create a new user
-type UserInfo struct {
-	Name     string `json:"name" binding:"required"`
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
-// TaskInfo use to create task
-type TaskInfo struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
-}
 
 // CheckHealth api check healthy
 func CheckHealth(ctx *gin.Context) {
 	ctx.Writer.WriteHeader(http.StatusNoContent)
 }
 
+// CreateUserRequest json data for create a new user
+type CreateUserRequest struct {
+	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
 // CreateUser user login handler
 func CreateUser(ctx *gin.Context) {
-	var data UserInfo
-	if err := ctx.ShouldBindJSON(&data); err != nil {
+	var req CreateUserRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
 			"code":    400,
 		})
 		return
 	}
-	newUser, err := CreateNewUser(data.Email, data.Name, data.Password)
+	newUser, err := CreateNewUser(req.Email, req.Name, req.Password)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
@@ -62,29 +50,33 @@ func CreateUser(ctx *gin.Context) {
 
 // GetTasks get all tasks of a user
 func GetTasks(ctx *gin.Context) {
-	user, _ := ctx.Get(identifyKey)
-	tasks := user.(*User).Tasks
-	if tasks == nil {
-		tasks = make([]Task, 0)
-	}
+	email, _ := ctx.Get(identifyKey)
+	user, _ := GetUserByEmail(email.(string))
 	ctx.JSON(http.StatusOK, gin.H{
 		"code":  200,
-		"tasks": tasks,
+		"tasks": user.Tasks,
 	})
+}
+
+// CreateTaskRequest use to create task
+type CreateTaskRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
 }
 
 // CreateTask create a new task
 func CreateTask(ctx *gin.Context) {
-	var data TaskInfo
-	if err := ctx.ShouldBindJSON(&data); err != nil {
+	var req CreateTaskRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": err.Error(),
 		})
 		return
 	}
-	user, _ := ctx.Get(identifyKey)
-	task, err := user.(*User).AddTask(data.Name, data.Description, false)
+	email, _ := ctx.Get(identifyKey)
+	user, _ := GetUserByEmail(email.(string))
+	task, err := user.AddTask(req.Name, req.Description, false)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -98,6 +90,70 @@ func CreateTask(ctx *gin.Context) {
 	})
 }
 
+// RemoveTask delete a task of the user
+func RemoveTask(ctx *gin.Context) {
+	taskID, err := strconv.Atoi(ctx.Param("task_id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": "Task ID isn't valid",
+			"code":    400,
+		})
+		return
+	}
+	TaskID := uint(taskID)
+	email, _ := ctx.Get(identifyKey)
+	user, _ := GetUserByEmail(email.(string))
+	_, err = user.RemoveTask(TaskID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+			"code":    500,
+		})
+		return
+	}
+	ctx.Writer.WriteHeader(http.StatusOK)
+}
+
+// UpdateTaskRequest json
+type UpdateTaskRequest struct {
+	CreateTaskRequest
+	Done bool `json:"done"`
+}
+
+// UpdateTask update a task of the user
+func UpdateTask(ctx *gin.Context) {
+	var req UpdateTaskRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+	TaskID := ctx.Param("task_id")
+	task, err := GetTaskByID(TaskID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+	UserID, _ := ctx.Get("ID")
+	if task.UserRefer != UserID.(uint) {
+		ctx.JSON(http.StatusForbidden, gin.H{
+			"code":    401,
+			"message": "Task owned by other",
+		})
+		return
+	}
+	task.Name = req.Name
+	task.Description = req.Description
+	task.Done = req.Done
+	db.Save(&task)
+	ctx.Writer.WriteHeader(http.StatusOK)
+}
+
 // InitHTTP initialize function
 func InitHTTP() {
 	authMiddleware, err := CreateAuthMiddleware(os.Getenv("SECRET_KEY"), identifyKey)
@@ -106,9 +162,7 @@ func InitHTTP() {
 		os.Exit(-1)
 	}
 
-	App = gin.New()
-	App.Use(gin.Logger())
-	App.Use(gin.Recovery())
+	App = gin.Default()
 	App.GET("/health", CheckHealth)
 	public := App.Group("/public")
 	{
@@ -120,5 +174,7 @@ func InitHTTP() {
 	{
 		private.GET("/tasks", GetTasks)
 		private.POST("/tasks", CreateTask)
+		private.PUT("/tasks/:task_id", UpdateTask)
+		private.DELETE("/tasks/:task_id", RemoveTask)
 	}
 }
