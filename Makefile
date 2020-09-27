@@ -1,7 +1,8 @@
 SRC := main.go \
 	   web.go \
 	   db.go \
-	   auth.go
+	   auth.go \
+	   worker.go \
 
 all: deps todo
 
@@ -11,5 +12,8 @@ deps:
 todo: main.go web.go db.go
 	go build
 
-run: $(SRC)
-	go run $(SRC)
+web: $(SRC)
+	go run $(SRC) $@
+
+worker: $(SRC)
+	go run $(SRC) $@

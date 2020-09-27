@@ -1,10 +1,30 @@
 package main
 
-import "os"
+import (
+	"github.com/urfave/cli"
+	"os"
+)
 
 func main() {
-	os.Setenv("ACCESS_SECRET", "lmao")
-	InitDB()
-	InitHTTP()
-	App.Run()
+	app := cli.NewApp()
+	app.Commands = []cli.Command{
+		{
+			Name: "worker",
+			Action: func(ctx *cli.Context) {
+				err := StartWorker()
+				if err != nil {
+					panic(err)
+				}
+			},
+		},
+		{
+			Name: "web",
+			Action: func(ctx *cli.Context) {
+				InitDB()
+				InitHTTP()
+				App.Run()
+			},
+		},
+	}
+	app.Run(os.Args)
 }
