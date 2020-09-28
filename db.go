@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"os"
 )
@@ -90,14 +91,14 @@ func GetTaskByID(TaskID string) (Task, error) {
 
 // InitDB create database connection and migrate models
 func InitDB() {
-	DefaultDatabaseURI := "root:password@tcp(127.0.0.1:3306)/todo?charset=utf8mb4&parseTime=True&loc=Local"
-	DatabaseDSN := os.Getenv("DB_DSN")
-	if len(DatabaseDSN) == 0 {
-		DatabaseDSN = DefaultDatabaseURI
-	}
-
 	var err error
-	db, err = gorm.Open(mysql.Open(DatabaseDSN), &gorm.Config{})
+	env := os.Getenv("ENV")
+	if env == "testing" {
+		db, err = gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	} else {
+		DatabaseDSN := os.Getenv("DB_DSN")
+		db, err = gorm.Open(mysql.Open(DatabaseDSN), &gorm.Config{})
+	}
 	if err != nil {
 		panic(err)
 	}

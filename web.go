@@ -5,15 +5,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 )
 
-// App HTTP application
-var App *gin.Engine
 var identifyKey = "email"
 
-// CheckHealth api check healthy
-func CheckHealth(ctx *gin.Context) {
+func checkHealth(ctx *gin.Context) {
 	ctx.Writer.WriteHeader(http.StatusNoContent)
 }
 
@@ -24,8 +23,12 @@ type CreateUserRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
-// CreateUser user login handler
-func CreateUser(ctx *gin.Context) {
+type CreateUserResponse struct {
+	UserID uint `json:"user_id"`
+	Code   uint `json:"code"`
+}
+
+func createUser(ctx *gin.Context) {
 	var req CreateUserRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -42,14 +45,13 @@ func CreateUser(ctx *gin.Context) {
 		})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{
-		"id":   newUser.ID,
-		"code": 200,
+	ctx.JSON(http.StatusOK, CreateUserResponse{
+		UserID: newUser.ID,
+		Code:   http.StatusOK,
 	})
 }
 
-// GetTasks get all tasks of a user
-func GetTasks(ctx *gin.Context) {
+func getTasks(ctx *gin.Context) {
 	email, _ := ctx.Get(identifyKey)
 	user, _ := GetUserByEmail(email.(string))
 	ctx.JSON(http.StatusOK, gin.H{
@@ -64,8 +66,7 @@ type CreateTaskRequest struct {
 	Description string `json:"description"`
 }
 
-// CreateTask create a new task
-func CreateTask(ctx *gin.Context) {
+func createTask(ctx *gin.Context) {
 	var req CreateTaskRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -90,8 +91,7 @@ func CreateTask(ctx *gin.Context) {
 	})
 }
 
-// RemoveTask delete a task of the user
-func RemoveTask(ctx *gin.Context) {
+func removeTask(ctx *gin.Context) {
 	taskID, err := strconv.Atoi(ctx.Param("task_id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -114,14 +114,13 @@ func RemoveTask(ctx *gin.Context) {
 	ctx.Writer.WriteHeader(http.StatusOK)
 }
 
-// UpdateTaskRequest json
+// UpdateTaskRequest update task info
 type UpdateTaskRequest struct {
 	CreateTaskRequest
 	Done bool `json:"done"`
 }
 
-// UpdateTask update a task of the user
-func UpdateTask(ctx *gin.Context) {
+func updateTask(ctx *gin.Context) {
 	var req UpdateTaskRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -154,27 +153,54 @@ func UpdateTask(ctx *gin.Context) {
 	ctx.Writer.WriteHeader(http.StatusOK)
 }
 
-// InitHTTP initialize function
-func InitHTTP() {
+func uploadFile(ctx *gin.Context) {
+	file, err := ctx.FormFile("file")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	now := time.Now()
+	filename := now.Format("1970-01-01T00:00:00.00000") + ".csv"
+	err = ctx.SaveUploadedFile(file, filepath.Join(uploadDir, filename))
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"task_id": "",
+	})
+}
+
+// SetupRouter initilize http router
+func SetupRouter() *gin.Engine {
+	router := gin.Default()
 	authMiddleware, err := CreateAuthMiddleware(os.Getenv("SECRET_KEY"), identifyKey)
 	if err != nil {
 		log.Fatalln(err.Error())
 		os.Exit(-1)
 	}
 
-	App = gin.Default()
-	App.GET("/health", CheckHealth)
-	public := App.Group("/public")
+	router.GET("/health", checkHealth)
+	public := router.Group("/public")
 	{
 		public.POST("/login", authMiddleware.LoginHandler)
-		public.POST("/users", CreateUser)
+		public.POST("/users", createUser)
 	}
-	private := App.Group("/private")
+	private := router.Group("/private")
 	private.Use(authMiddleware.MiddlewareFunc())
 	{
-		private.GET("/tasks", GetTasks)
-		private.POST("/tasks", CreateTask)
-		private.PUT("/tasks/:task_id", UpdateTask)
-		private.DELETE("/tasks/:task_id", RemoveTask)
+		private.GET("/tasks", getTasks)
+		private.POST("/tasks", createTask)
+		private.PUT("/tasks/:task_id", updateTask)
+		private.DELETE("/tasks/:task_id", removeTask)
 	}
+	return router
 }

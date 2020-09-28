@@ -21,8 +21,8 @@ func main() {
 			Name: "web",
 			Action: func(ctx *cli.Context) {
 				InitDB()
-				InitHTTP()
-				App.Run()
+				router := SetupRouter()
+				router.Run()
 			},
 		},
 	}

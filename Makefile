@@ -17,3 +17,6 @@ web: $(SRC)
 
 worker: $(SRC)
 	go run $(SRC) $@
+
+test:
+	go test

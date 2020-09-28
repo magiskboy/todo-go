@@ -1,23 +1,40 @@
 package main
 
 import (
-	amqpbackend "github.com/RichardKnop/machinery/v1/backends/amqp"
-	amqpbroker "github.com/RichardKnop/machinery/v1/brokers/amqp"
+	"encoding/csv"
+	redisbackend "github.com/RichardKnop/machinery/v1/backends/redis"
+	redisbroker "github.com/RichardKnop/machinery/v1/brokers/redis"
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/log"
 	"github.com/RichardKnop/machinery/v2"
+	"io"
 	"os"
 	"runtime"
 	"strconv"
 )
 
 func loadConfig() (*config.Config, error) {
-	return config.NewFromEnvironment()
-	// return &config.Config{
-	// Broker:        "redis://localhost:6379/0",
-	// DefaultQueue:  "my_queue",
-	// ResultBackend: "redis://localhost:6379/0",
-	// }, nil
+	return &config.Config{
+		Broker:        "redis://localhost:6379/0",
+		DefaultQueue:  "my_queue",
+		ResultBackend: "redis://localhost:6379/0",
+	}, nil
+}
+
+func processCSVFile(filename string) error {
+	file, err := os.Open("upload/" + filename)
+	if err != nil {
+		panic(err)
+	}
+	reader := csv.NewReader(file)
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		log.DEBUG.Println(record)
+	}
+	return nil
 }
 
 func createServer() (*machinery.Server, error) {
@@ -26,11 +43,13 @@ func createServer() (*machinery.Server, error) {
 		return nil, err
 	}
 
-	backend := amqpbackend.New(cnf)
-	broker := amqpbroker.New(cnf)
+	backend := redisbackend.New(cnf, "localhost:6379", "", "", 0)
+	broker := redisbroker.New(cnf, "localhost:6379", "", "", 0)
 	server := machinery.NewServer(cnf, broker, backend)
 
-	tasks := map[string]interface{}{}
+	tasks := map[string]interface{}{
+		"process_csv": processCSVFile,
+	}
 
 	return server, server.RegisterTasks(tasks)
 }
