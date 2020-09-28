@@ -13,5 +13,5 @@ $ ./todo
 #### Run development
 
 ```bash
-$ make run
+$ make web
 ```

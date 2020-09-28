@@ -1,0 +1,28 @@
+version: "3.7"
+
+services:
+  web:
+    image: todo:latest
+    environment:
+      - DB_DSN="root:password@tcp(db:3306)/todo"
+    ports:
+      - 8000:8080
+    depends_on:
+      - db
+    restart: on-failure
+    networks:
+      - mynet
+  db:
+    image: mysql:5.5.61
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=todo
+    expose:
+      - 3306
+    ports:
+      - 3306:3306
+    restart: on-failure
+    networks:
+      - mynet
+networks:
+  mynet:

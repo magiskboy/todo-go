@@ -63,6 +63,23 @@ func (testSuite *TodoTestSuite) TestRegisterUser() {
 	assert.Nil(testSuite.T(), err)
 }
 
+func (testSuite *TodoTestSuite) TestLoginUser() {
+	password := "123456"
+	user := User{Name: "Lmao", Email: "user@email.com"}
+	user.SetPassword(password)
+	db.Create(&user)
+	loginInfo := LoginInfo{Email: user.Email, Password: password}
+	loginData, _ := json.Marshal(loginInfo)
+	req, _ := http.NewRequest("POST", "/public/login", bytes.NewReader(loginData))
+	w := httptest.NewRecorder()
+	testSuite.router.ServeHTTP(w, req)
+
+	assert.Equal(testSuite.T(), http.StatusOK, w.Code)
+}
+
+func (testSuite *TodoTestSuite) TestGetTasks() {
+}
+
 func TestTodoTestSuite(t *testing.T) {
 	suite.Run(t, new(TodoTestSuite))
 }

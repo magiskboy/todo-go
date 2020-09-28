@@ -9,7 +9,7 @@ all: deps todo
 deps:
 	go get
 
-todo: main.go web.go db.go
+todo: $(SRC)
 	go build
 
 web: $(SRC)
